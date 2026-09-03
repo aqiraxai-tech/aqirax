@@ -365,7 +365,7 @@ async def ayuda(ctx):
         title="Panel de Comandos - Aqirax AI",
         color=discord.Color.blue()
     )
-    embed.add_field(name=".a <prompt>", value="Consulta al modelo DeepSeek-V4.", inline=False)
+    embed.add_field(name=".a <prompt>", value="Consulta al modelo Aqirax Flash.", inline=False)
     embed.add_field(name=".i <prompt>", value="Genera imágenes en calidad 4K.", inline=False)
     embed.add_field(name=".v <prompt>", value="Genera videos de 10s (Cuesta 5 XCoins).", inline=False)
     embed.add_field(name=".bal", value="Consulta tu saldo de XCoins.", inline=False)
