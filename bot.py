@@ -112,7 +112,7 @@ async def video_worker():
             payload = {
                 "model": "agnes-video-2.5-flash",
                 "prompt": prompt,
-                "seconds": "10",  # Actualizado a 10s
+                "seconds": "5",  # Actualizado a 10s
                 "mode": "text",
                 "size": "720P",
                 "aspect_ratio": "16:9"
