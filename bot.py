@@ -1,6 +1,5 @@
 import discord
 from discord.ext import commands
-from discord.gateway import DiscordWebSocket
 import aiohttp
 import asyncio
 import io
@@ -14,43 +13,16 @@ TEXT_API_KEY = os.getenv("TEXT_API_KEY")
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 
 
-import discord
-from discord.gateway import DiscordWebSocket
-
-async def identify(self):
-    payload = {
-        'op': self.IDENTIFY,
-        'd': {
-            'token': self.token,
-            'properties': {
-                '$os': 'android',
-                '$browser': 'Discord Android',
-                '$device': 'Discord Android',
-                '$referrer': '',
-                '$referring_domain': ''
-            },
-            'compress': getattr(self, 'compress', False),
-            'large_threshold': getattr(self, 'large_threshold', 250),
-            'v': getattr(self, 'version', 10)
-        }
-    }
-
-    if getattr(self, 'shard_id', None) is not None:
-        payload['d']['shard'] = [self.shard_id, getattr(self, 'shard_count', 1)]
-
-    state = self._connection
-    if getattr(state, '_activity', None) is not None or getattr(state, '_status', None) is not None:
-        payload['d']['presence'] = {
-            'status': state._status,
-            'game': state._activity,
-            'since': 0,
-            'afk': False
-        }
-
-    await self.call_hooks('before_identify', getattr(self, 'shard_id', None), initial=getattr(self, '_initial', True))
-    await self.send_as_json(payload)
-
-DiscordWebSocket.identify = identify
+@bot.event
+async def on_ready():
+    # Creamos el estado de transmisión
+    activity = discord.Streaming(
+        name="Aqirax AI - Aqirax Eco 3.1",
+        url="https://www.twitch.tv/discord"  # URL válida requerida por la API de Discord
+    )
+    
+    # Aplicamos la actividad al bot
+    await bot.change_presence(activity=activity)
 
 if not DISCORD_TOKEN or not IA_KEY_AGNES or not TEXT_API_KEY:
     print("❌ ERROR: Faltan variables de entorno esenciales.")
