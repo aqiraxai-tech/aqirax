@@ -14,6 +14,9 @@ TEXT_API_KEY = os.getenv("TEXT_API_KEY")
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 
 
+import discord
+from discord.gateway import DiscordWebSocket
+
 async def identify(self):
     payload = {
         'op': self.IDENTIFY,
@@ -26,17 +29,17 @@ async def identify(self):
                 '$referrer': '',
                 '$referring_domain': ''
             },
-            'compress': getattr(self, 'compress', False), # <--- CORREGIDO CON GETATTR
-            'large_threshold': self.large_threshold,
-            'v': self.version
+            'compress': getattr(self, 'compress', False),
+            'large_threshold': getattr(self, 'large_threshold', 250),
+            'v': getattr(self, 'version', 10)
         }
     }
 
-    if self.shard_id is not None:
-        payload['d']['shard'] = [self.shard_id, self.shard_count]
+    if getattr(self, 'shard_id', None) is not None:
+        payload['d']['shard'] = [self.shard_id, getattr(self, 'shard_count', 1)]
 
     state = self._connection
-    if state._activity is not None or state._status is not None:
+    if getattr(state, '_activity', None) is not None or getattr(state, '_status', None) is not None:
         payload['d']['presence'] = {
             'status': state._status,
             'game': state._activity,
@@ -44,7 +47,7 @@ async def identify(self):
             'afk': False
         }
 
-    await self.call_hooks('before_identify', self.shard_id, initial=self._initial)
+    await self.call_hooks('before_identify', getattr(self, 'shard_id', None), initial=getattr(self, '_initial', True))
     await self.send_as_json(payload)
 
 DiscordWebSocket.identify = identify
