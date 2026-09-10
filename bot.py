@@ -13,16 +13,7 @@ TEXT_API_KEY = os.getenv("TEXT_API_KEY")
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 
 
-@bot.event
-async def on_ready():
-    # Creamos el estado de transmisión
-    activity = discord.Streaming(
-        name="Aqirax AI - Aqirax Eco 3.1",
-        url="https://www.twitch.tv/discord"  # URL válida requerida por la API de Discord
-    )
     
-    # Aplicamos la actividad al bot
-    await bot.change_presence(activity=activity)
 
 if not DISCORD_TOKEN or not IA_KEY_AGNES or not TEXT_API_KEY:
     print("❌ ERROR: Faltan variables de entorno esenciales.")
