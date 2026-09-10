@@ -218,7 +218,7 @@ async def responder_pregunta(ctx, *, prompt: str):
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "mimo-v2.5",
+        "model": "qwen3.8-flash",
         "messages": [
             {"role": "system", "content": "Eres Aqirax AI, un modelo avanzado de asistencia. Responde directamente y con claridad."},
             {"role": "user", "content": prompt}
