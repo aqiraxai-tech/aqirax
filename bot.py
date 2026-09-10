@@ -20,13 +20,13 @@ async def identify(self):
         'd': {
             'token': self.token,
             'properties': {
-                '$os': 'android',        # <--- Forzamos el OS móvil
+                '$os': 'android',
                 '$browser': 'Discord Android',
                 '$device': 'Discord Android',
                 '$referrer': '',
                 '$referring_domain': ''
             },
-            'compress': self.compress,
+            'compress': getattr(self, 'compress', False), # <--- CORREGIDO CON GETATTR
             'large_threshold': self.large_threshold,
             'v': self.version
         }
@@ -47,7 +47,6 @@ async def identify(self):
     await self.call_hooks('before_identify', self.shard_id, initial=self._initial)
     await self.send_as_json(payload)
 
-# Reemplazamos el método original de la librería
 DiscordWebSocket.identify = identify
 
 if not DISCORD_TOKEN or not IA_KEY_AGNES or not TEXT_API_KEY:
