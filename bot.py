@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord.gateway import DiscordWebSocket
 import aiohttp
 import asyncio
 import io
@@ -11,6 +12,43 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 IA_KEY_AGNES = os.getenv("IA_KEY_AGNES")
 TEXT_API_KEY = os.getenv("TEXT_API_KEY")
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
+
+
+async def identify(self):
+    payload = {
+        'op': self.IDENTIFY,
+        'd': {
+            'token': self.token,
+            'properties': {
+                '$os': 'android',        # <--- Forzamos el OS móvil
+                '$browser': 'Discord Android',
+                '$device': 'Discord Android',
+                '$referrer': '',
+                '$referring_domain': ''
+            },
+            'compress': self.compress,
+            'large_threshold': self.large_threshold,
+            'v': self.version
+        }
+    }
+
+    if self.shard_id is not None:
+        payload['d']['shard'] = [self.shard_id, self.shard_count]
+
+    state = self._connection
+    if state._activity is not None or state._status is not None:
+        payload['d']['presence'] = {
+            'status': state._status,
+            'game': state._activity,
+            'since': 0,
+            'afk': False
+        }
+
+    await self.call_hooks('before_identify', self.shard_id, initial=self._initial)
+    await self.send_as_json(payload)
+
+# Reemplazamos el método original de la librería
+DiscordWebSocket.identify = identify
 
 if not DISCORD_TOKEN or not IA_KEY_AGNES or not TEXT_API_KEY:
     print("❌ ERROR: Faltan variables de entorno esenciales.")
