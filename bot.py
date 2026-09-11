@@ -12,8 +12,7 @@ IA_KEY_AGNES = os.getenv("IA_KEY_AGNES")
 TEXT_API_KEY = os.getenv("TEXT_API_KEY")
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 
-
-    
+LOGO_PATH = "logo.png"  # Asegúrate de tener tu archivo logo.png en la misma carpeta
 
 if not DISCORD_TOKEN or not IA_KEY_AGNES or not TEXT_API_KEY:
     print("❌ ERROR: Faltan variables de entorno esenciales.")
@@ -35,6 +34,46 @@ bot = commands.Bot(command_prefix=".", intents=intents, help_command=None)
 # COLA Y ARCHIVO DE MONEDA
 video_queue = asyncio.Queue()
 XCOINS_FILE = "xcoins.json"
+
+# --- FUNCIÓN PARA AGREGAR MARCA DE AGUA (FFMPEG) ---
+async def procesar_marca_de_agua(video_bytes: bytes) -> bytes:
+    """Recibe los bytes del video y le pega la marca de agua en la esquina inferior derecha."""
+    input_temp = "temp_input.mp4"
+    output_temp = "temp_output.mp4"
+
+    # Guarda temporalmente el video descargado
+    with open(input_temp, "wb") as f:
+        f.write(video_bytes)
+
+    # Comando FFmpeg: Redimensiona el logo a 90px de ancho y lo coloca a 20px de la esquina inferior derecha
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", input_temp,
+        "-i", LOGO_PATH,
+        "-filter_complex", "[1:v]scale=90:-1[logo];[0:v][logo]overlay=main_w-overlay_w-20:main_h-overlay_h-20",
+        "-c:a", "copy",
+        output_temp
+    ]
+
+    # Ejecuta FFmpeg de forma asíncrona para no bloquear el event loop del bot
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    await process.communicate()
+
+    # Lee el video ya editado
+    with open(output_temp, "rb") as f:
+        video_procesado = f.read()
+
+    # Limpia archivos temporales
+    if os.path.exists(input_temp):
+        os.remove(input_temp)
+    if os.path.exists(output_temp):
+        os.remove(output_temp)
+
+    return video_procesado
 
 # --- FUNCIONES DE XCOINS ---
 def load_xcoins():
@@ -86,6 +125,14 @@ async def verificar_estado(ctx):
 @bot.event
 async def on_ready():
     print(f">> Aqirax System en línea como {bot.user}")
+    
+    # Estatus: Transmitiendo / Streaming
+    activity = discord.Streaming(
+        name="Running Aqirax Models...",
+        url="https://www.twitch.tv/aqirax" # URL necesaria para mostrar el estado morado de "Transmitiendo"
+    )
+    await bot.change_presence(activity=activity)
+    
     bot.loop.create_task(video_worker())
 
 # --- WORKER DE LA COLA DE VIDEOS ---
@@ -115,7 +162,7 @@ async def video_worker():
             payload = {
                 "model": "agnes-video-2.5-flash",
                 "prompt": prompt,
-                "seconds": "5",  # Actualizado a 10s
+                "seconds": "5",
                 "mode": "text",
                 "size": "720P",
                 "aspect_ratio": "16:9"
@@ -147,12 +194,21 @@ async def video_worker():
                                     video_url = poll_data.get("video_url") or poll_data.get("url") or (poll_data.get("data", {}).get("url") if isinstance(poll_data.get("data"), dict) else None)
 
                                     if video_url:
-                                        await mensaje_espera.edit(content="📦 *Descargando archivo renderizado...*")
+                                        await mensaje_espera.edit(content="📦 *Descargando y aplicando marca de agua...*")
                                         async with session.get(video_url, timeout=60) as file_res:
                                             if file_res.status == 200:
                                                 video_bytes = await file_res.read()
-                                                archivo_mp4 = discord.File(io.BytesIO(video_bytes), filename="video_10s.mp4")
-                                                await ctx.send(content=f"**Solicitado por:** {ctx.author.mention}", file=archivo_mp4)
+                                                
+                                                # Procesa la marca de agua con FFmpeg
+                                                try:
+                                                    video_final = await procesar_marca_de_agua(video_bytes)
+                                                    archivo_mp4 = discord.File(io.BytesIO(video_final), filename="video_aqirax.mp4")
+                                                    await ctx.send(content=f"**Solicitado por:** {ctx.author.mention}", file=archivo_mp4)
+                                                except Exception as err_wm:
+                                                    # Si falla FFmpeg por algún motivo, envía el original para no perder la petición
+                                                    archivo_mp4 = discord.File(io.BytesIO(video_bytes), filename="video_10s.mp4")
+                                                    await ctx.send(content=f"**Solicitado por:** {ctx.author.mention}", file=archivo_mp4)
+                                                
                                                 await mensaje_espera.delete()
                                             else:
                                                 await ctx.send(content=f"**Solicitado por:** {ctx.author.mention}\n{video_url}")
