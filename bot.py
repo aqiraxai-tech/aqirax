@@ -18,8 +18,9 @@ OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 
 LOGO_PATH = "logo.png"
 
-# Coloca aquí el ID exacto de tu emoji de Discord
-EMOJI_LOGO = "<:aqirax:123456789012345678>"
+# Configuración de Emojis y Roles
+EMOJI_LOGO = "<:tuff:1548036405832192201> "
+VIP_ROLE_ID = 1548090147952795728  # Rol para quitar marca de agua
 
 if not DISCORD_TOKEN or not IA_KEY_AGNES or not TEXT_API_KEY:
     print("❌ ERROR: Faltan variables de entorno esenciales.")
@@ -145,7 +146,7 @@ async def on_ready():
 # --- WORKER DE LA COLA DE VIDEOS ---
 async def video_worker():
     while True:
-        ctx, prompt, image_url, mensaje_espera = await video_queue.get()
+        ctx, prompt, image_url, sin_marca, mensaje_espera = await video_queue.get()
         try:
             user_id = str(ctx.author.id)
             coins = get_user_xcoins(user_id)
@@ -206,20 +207,24 @@ async def video_worker():
                                     video_url = poll_data.get("video_url") or poll_data.get("url") or (poll_data.get("data", {}).get("url") if isinstance(poll_data.get("data"), dict) else None)
 
                                     if video_url:
-                                        await mensaje_espera.edit(content=f"{EMOJI_LOGO} *Aplicando marca de agua Aqirax...*")
                                         async with session.get(video_url, timeout=60) as file_res:
                                             if file_res.status == 200:
                                                 video_bytes = await file_res.read()
                                                 
-                                                try:
-                                                    video_final = await procesar_marca_de_agua(video_bytes)
-                                                    archivo_mp4 = discord.File(io.BytesIO(video_final), filename="video_aqirax.mp4")
-                                                    await ctx.send(content=f"**Solicitado por:** {ctx.author.mention}", file=archivo_mp4)
-                                                except Exception as err_wm:
-                                                    print(f"Error marca de agua: {err_wm}")
-                                                    archivo_mp4 = discord.File(io.BytesIO(video_bytes), filename="video_10s.mp4")
-                                                    await ctx.send(content=f"**Solicitado por:** {ctx.author.mention}", file=archivo_mp4)
-                                                
+                                                # SI TIENE ROL Y PIDIÓ SIN MARCA (.un) -> NO PASA POR FFMPEG
+                                                if sin_marca:
+                                                    await mensaje_espera.edit(content=f"{EMOJI_LOGO} *Exportando video limpio (Sin marca de agua)...*")
+                                                    archivo_mp4 = discord.File(io.BytesIO(video_bytes), filename="video_aqirax_unwatermarked.mp4")
+                                                else:
+                                                    await mensaje_espera.edit(content=f"{EMOJI_LOGO} *Aplicando marca de agua Aqirax...*")
+                                                    try:
+                                                        video_final = await procesar_marca_de_agua(video_bytes)
+                                                        archivo_mp4 = discord.File(io.BytesIO(video_final), filename="video_aqirax.mp4")
+                                                    except Exception as err_wm:
+                                                        print(f"Error marca de agua: {err_wm}")
+                                                        archivo_mp4 = discord.File(io.BytesIO(video_bytes), filename="video_aqirax.mp4")
+
+                                                await ctx.send(content=f"**Solicitado por:** {ctx.author.mention}", file=archivo_mp4)
                                                 await mensaje_espera.delete()
                                             else:
                                                 await ctx.send(content=f"**Solicitado por:** {ctx.author.mention}\n{video_url}")
@@ -316,7 +321,6 @@ async def responder_pregunta(ctx, *, prompt: str):
                     respuesta = data["choices"][0]["message"]["content"]
                     if len(respuesta) > 1850:
                         respuesta = respuesta[:1850] + "..."
-                    # Pone el emoji de Aqirax al FINAL de la respuesta
                     await mensaje_espera.edit(content=f"**Pregunta:** {prompt}\n\n{respuesta} {EMOJI_LOGO}")
                 else:
                     await mensaje_espera.edit(content=f"`[Error {res.status}]` No se pudo obtener respuesta del modelo.")
@@ -381,6 +385,19 @@ async def generar_video(ctx, *, prompt: str = ""):
         )
         return await ctx.send(embed=embed_no_coins)
 
+    sin_marca = False
+    
+    # REVISAR SI PIDIÓ QUITAR MARCA DE AGUA
+    if ".un" in prompt:
+        prompt = prompt.replace(".un", "").strip()
+        # Verificar si el usuario tiene el rol permitido en el servidor
+        if isinstance(ctx.author, discord.Member):
+            has_role = any(role.id == VIP_ROLE_ID for role in ctx.author.roles)
+            if has_role or ctx.author.id == OWNER_ID:
+                sin_marca = True
+            else:
+                await ctx.send(f"{EMOJI_LOGO} ⚠️ **Aviso:** No posees el rol requerido para remover la marca de agua. Tu video se procesará normalmente.", delete_after=10)
+
     image_url = None
 
     if ctx.message.attachments:
@@ -398,7 +415,7 @@ async def generar_video(ctx, *, prompt: str = ""):
     else:
         mensaje_espera = await ctx.send(f"{EMOJI_LOGO} **Encolado.** Eres el primero en la fila, procesando video...")
 
-    await video_queue.put((ctx, prompt, image_url, mensaje_espera))
+    await video_queue.put((ctx, prompt, image_url, sin_marca, mensaje_espera))
 
 # --- COMANDOS DE MONEDA (XCOINS) ---
 @bot.command(name="bal")
@@ -458,7 +475,7 @@ async def ayuda(ctx):
     )
     embed.add_field(name=".a <prompt>", value="Consulta al modelo Aqirax Flash.", inline=False)
     embed.add_field(name=".i <prompt>", value="Genera imágenes en calidad 4K.", inline=False)
-    embed.add_field(name=".v <prompt> [.i]", value="Genera videos de 10s (Cuesta 5 XCoins). Adjunta o usa .i para pasar imagen de referencia.", inline=False)
+    embed.add_field(name=".v <prompt> [.i] [.un]", value="Genera videos de 10s (Cuesta 5 XCoins). Usa `.un` para sin marca de agua (Requiere Rol VIP).", inline=False)
     embed.add_field(name=".bal", value="Consulta tu saldo de XCoins.", inline=False)
     
     if ctx.author.id == OWNER_ID:
