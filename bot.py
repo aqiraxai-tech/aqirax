@@ -18,6 +18,9 @@ OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 
 LOGO_PATH = "logo.png"
 
+# Coloca aquí el ID exacto de tu emoji de Discord
+EMOJI_LOGO = "<:aqirax:123456789012345678>"
+
 if not DISCORD_TOKEN or not IA_KEY_AGNES or not TEXT_API_KEY:
     print("❌ ERROR: Faltan variables de entorno esenciales.")
 
@@ -39,20 +42,18 @@ bot = commands.Bot(command_prefix=".", intents=intents, help_command=None)
 video_queue = asyncio.Queue()
 XCOINS_FILE = "xcoins.json"
 
-# --- FUNCIÓN PARA AGREGAR MARCA DE AGUA BLANCA PURA (FFMPEG) ---
+# --- FUNCIÓN PARA AGREGAR MARCA DE AGUA (FFMPEG) ---
 async def procesar_marca_de_agua(video_bytes: bytes) -> bytes:
-    """Procesa el video y le pega el logo blanco puro, pequeño (60px) abajo a la derecha."""
     input_temp = "temp_input.mp4"
     output_temp = "temp_output.mp4"
 
     if not os.path.exists(LOGO_PATH):
-        print(f"❌ [ERROR LOGO] No existe el archivo '{LOGO_PATH}' en la raíz del proyecto.")
+        print(f"Error: No existe el archivo '{LOGO_PATH}' en la raíz.")
         raise FileNotFoundError(f"No se encontró {LOGO_PATH}")
 
     with open(input_temp, "wb") as f:
         f.write(video_bytes)
 
-    # Logo a 60px de ancho, sin transparencia, abajo a la derecha (15px de margen)
     filter_graph = "[1:v]scale=60:-1[logo];[0:v][logo]overlay=main_w-overlay_w-15:main_h-overlay_h-15"
 
     cmd = [
@@ -72,13 +73,12 @@ async def procesar_marca_de_agua(video_bytes: bytes) -> bytes:
     stdout, stderr = await process.communicate()
 
     if process.returncode != 0:
-        print(f"❌ [ERROR FFMPEG DETALLADO]:\n{stderr.decode('utf-8', errors='ignore')}")
+        print(f"Error FFmpeg:\n{stderr.decode('utf-8', errors='ignore')}")
         raise RuntimeError("FFmpeg falló al procesar el video.")
 
     with open(output_temp, "rb") as f:
         video_procesado = f.read()
 
-    # Limpieza
     if os.path.exists(input_temp):
         os.remove(input_temp)
     if os.path.exists(output_temp):
@@ -122,7 +122,7 @@ def update_user_xcoins(user_id: str, amount: int):
 async def verificar_estado(ctx):
     if not BOT_ACTIVO and ctx.author.id != OWNER_ID:
         embed = discord.Embed(
-            title="🚫 Bot En Mantenimiento",
+            title=f"{EMOJI_LOGO} Bot En Mantenimiento",
             description=f"El bot ha sido pausado temporalmente por el Administrador.\n\n**Razón:** `{MOTIVO_MANTENIMIENTO}`",
             color=discord.Color.red()
         )
@@ -135,19 +135,17 @@ async def verificar_estado(ctx):
 @bot.event
 async def on_ready():
     print(f">> Aqirax System en línea como {bot.user}")
-    
     activity = discord.Streaming(
         name="Running Aqirax Models...",
         url="https://www.twitch.tv/aqirax"
     )
     await bot.change_presence(activity=activity)
-    
     bot.loop.create_task(video_worker())
 
 # --- WORKER DE LA COLA DE VIDEOS ---
 async def video_worker():
     while True:
-        ctx, prompt, mensaje_espera = await video_queue.get()
+        ctx, prompt, image_url, mensaje_espera = await video_queue.get()
         try:
             user_id = str(ctx.author.id)
             coins = get_user_xcoins(user_id)
@@ -162,20 +160,26 @@ async def video_worker():
                 video_queue.task_done()
                 continue
 
-            await mensaje_espera.edit(content="⚙️ *Enviando render a los servidores de video (10s)...*")
+            await mensaje_espera.edit(content=f"{EMOJI_LOGO} *Enviando render a los servidores de video...*")
             
             headers = {
                 "Authorization": f"Bearer {IA_KEY_AGNES}",
                 "Content-Type": "application/json"
             }
+
             payload = {
                 "model": "agnes-video-2.5-flash",
                 "prompt": prompt,
                 "seconds": "5",
-                "mode": "text",
                 "size": "720P",
                 "aspect_ratio": "16:9"
             }
+
+            if image_url:
+                payload["mode"] = "reference"
+                payload["images"] = [image_url]
+            else:
+                payload["mode"] = "text"
 
             async with aiohttp.ClientSession() as session:
                 async with session.post(URL_VIDEO, headers=headers, json=payload, timeout=30) as res:
@@ -190,7 +194,7 @@ async def video_worker():
                             video_queue.task_done()
                             continue
 
-                        await mensaje_espera.edit(content="🎬 *Procesando fotogramas... Esto puede tomar unos momentos.*")
+                        await mensaje_espera.edit(content=f"{EMOJI_LOGO} *Procesando fotogramas... Esto puede tomar unos momentos.*")
                         url_poll = f"https://apihub.agnes-ai.com/v1/agnesapi?video_id={video_id}&model_name=agnes-video-2.5-flash"
                         
                         video_exitoso = False
@@ -199,11 +203,10 @@ async def video_worker():
                             async with session.get(url_poll, headers=headers, timeout=15) as poll_res:
                                 if poll_res.status == 200:
                                     poll_data = await poll_res.json()
-                                    status = poll_data.get("status") or poll_data.get("state")
                                     video_url = poll_data.get("video_url") or poll_data.get("url") or (poll_data.get("data", {}).get("url") if isinstance(poll_data.get("data"), dict) else None)
 
                                     if video_url:
-                                        await mensaje_espera.edit(content="📦 *Aplicando marca de agua Aqirax...*")
+                                        await mensaje_espera.edit(content=f"{EMOJI_LOGO} *Aplicando marca de agua Aqirax...*")
                                         async with session.get(video_url, timeout=60) as file_res:
                                             if file_res.status == 200:
                                                 video_bytes = await file_res.read()
@@ -213,7 +216,7 @@ async def video_worker():
                                                     archivo_mp4 = discord.File(io.BytesIO(video_final), filename="video_aqirax.mp4")
                                                     await ctx.send(content=f"**Solicitado por:** {ctx.author.mention}", file=archivo_mp4)
                                                 except Exception as err_wm:
-                                                    print(f"⚠️ Error procesando marca de agua: {err_wm}")
+                                                    print(f"Error marca de agua: {err_wm}")
                                                     archivo_mp4 = discord.File(io.BytesIO(video_bytes), filename="video_10s.mp4")
                                                     await ctx.send(content=f"**Solicitado por:** {ctx.author.mention}", file=archivo_mp4)
                                                 
@@ -225,7 +228,7 @@ async def video_worker():
                                         update_user_xcoins(user_id, -5)
                                         video_exitoso = True
                                         break
-                                    elif status in ["failed", "error"]:
+                                    elif poll_data.get("status") in ["failed", "error"]:
                                         await mensaje_espera.edit(content="`[Error]` Falló la generación del video en los servidores.")
                                         break
                         if not video_exitoso:
@@ -249,7 +252,7 @@ async def apagar_bot(ctx, *, razon: str = "Mantenimiento de rutina"):
     MOTIVO_MANTENIMIENTO = razon
     
     embed = discord.Embed(
-        title="🔴 Modo Mantenimiento Activado",
+        title=f"{EMOJI_LOGO} Modo Mantenimiento Activado",
         description=f"El bot ha sido apagado para los usuarios.\n\n**Razón:** `{razon}`",
         color=discord.Color.dark_red()
     )
@@ -265,7 +268,7 @@ async def encender_bot(ctx):
     BOT_ACTIVO = True
     
     embed = discord.Embed(
-        title="🟢 Sistema Operativo",
+        title=f"{EMOJI_LOGO} Sistema Operativo",
         description="El bot ha sido reactivado. Todos los comandos se encuentran habilitados.",
         color=discord.Color.green()
     )
@@ -279,7 +282,7 @@ async def responder_pregunta(ctx, *, prompt: str):
     if not await verificar_estado(ctx):
         return
 
-    mensaje_espera = await ctx.send("🧠 *Consultando modelo...*")
+    mensaje_espera = await ctx.send(f"{EMOJI_LOGO} *Consultando modelo...*")
     headers = {
         "Authorization": f"Bearer {TEXT_API_KEY}",
         "Content-Type": "application/json"
@@ -311,9 +314,10 @@ async def responder_pregunta(ctx, *, prompt: str):
                 if res.status == 200:
                     data = await res.json()
                     respuesta = data["choices"][0]["message"]["content"]
-                    if len(respuesta) > 1900:
-                        respuesta = respuesta[:1900] + "..."
-                    await mensaje_espera.edit(content=f"**Pregunta:** {prompt}\n\n{respuesta}")
+                    if len(respuesta) > 1850:
+                        respuesta = respuesta[:1850] + "..."
+                    # Pone el emoji de Aqirax al FINAL de la respuesta
+                    await mensaje_espera.edit(content=f"**Pregunta:** {prompt}\n\n{respuesta} {EMOJI_LOGO}")
                 else:
                     await mensaje_espera.edit(content=f"`[Error {res.status}]` No se pudo obtener respuesta del modelo.")
     except Exception as e:
@@ -325,7 +329,7 @@ async def generar_imagen(ctx, *, prompt: str):
     if not await verificar_estado(ctx):
         return
 
-    mensaje_espera = await ctx.send("🎨 *Renderizando imagen 4K...*")
+    mensaje_espera = await ctx.send(f"{EMOJI_LOGO} *Renderizando imagen 4K...*")
     headers = {
         "Authorization": f"Bearer {IA_KEY_AGNES}",
         "Content-Type": "application/json"
@@ -362,7 +366,7 @@ async def generar_imagen(ctx, *, prompt: str):
 
 # 3. VIDEO (.v)
 @bot.command(name="v")
-async def generar_video(ctx, *, prompt: str):
+async def generar_video(ctx, *, prompt: str = ""):
     if not await verificar_estado(ctx):
         return
 
@@ -372,22 +376,31 @@ async def generar_video(ctx, *, prompt: str):
     if user_coins < 5:
         embed_no_coins = discord.Embed(
             title="XCoins Insuficientes",
-            description=f"Se requieren **5 XCoins** para generar un video de 10s.\nTu saldo actual: `{user_coins} XCoins`",
+            description=f"Se requieren **5 XCoins** para generar un video.\nTu saldo actual: `{user_coins} XCoins`",
             color=discord.Color.red()
         )
         return await ctx.send(embed=embed_no_coins)
 
+    image_url = None
+
+    if ctx.message.attachments:
+        image_url = ctx.message.attachments[0].url
+    elif ".i" in prompt:
+        parts = prompt.split(".i")
+        prompt = parts[0].strip()
+        if len(parts) > 1 and parts[1].strip().startswith("http"):
+            image_url = parts[1].strip()
+
     posicion = video_queue.qsize() + 1
     
     if posicion > 1:
-        mensaje_espera = await ctx.send(f"⏳ **Añadido a la cola.** Tu posición actual es **#{posicion}**. Espere su turno...")
+        mensaje_espera = await ctx.send(f"{EMOJI_LOGO} **Añadido a la cola.** Tu posición actual es **#{posicion}**. Espere su turno...")
     else:
-        mensaje_espera = await ctx.send("⏳ **Encolado.** Eres el primero en la fila, procesando video...")
+        mensaje_espera = await ctx.send(f"{EMOJI_LOGO} **Encolado.** Eres el primero en la fila, procesando video...")
 
-    await video_queue.put((ctx, prompt, mensaje_espera))
+    await video_queue.put((ctx, prompt, image_url, mensaje_espera))
 
 # --- COMANDOS DE MONEDA (XCOINS) ---
-
 @bot.command(name="bal")
 async def ver_creditos(ctx):
     coins = get_user_xcoins(str(ctx.author.id))
@@ -445,7 +458,7 @@ async def ayuda(ctx):
     )
     embed.add_field(name=".a <prompt>", value="Consulta al modelo Aqirax Flash.", inline=False)
     embed.add_field(name=".i <prompt>", value="Genera imágenes en calidad 4K.", inline=False)
-    embed.add_field(name=".v <prompt>", value="Genera videos de 10s (Cuesta 5 XCoins).", inline=False)
+    embed.add_field(name=".v <prompt> [.i]", value="Genera videos de 10s (Cuesta 5 XCoins). Adjunta o usa .i para pasar imagen de referencia.", inline=False)
     embed.add_field(name=".bal", value="Consulta tu saldo de XCoins.", inline=False)
     
     if ctx.author.id == OWNER_ID:
