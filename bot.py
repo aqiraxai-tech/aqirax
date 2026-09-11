@@ -12,7 +12,7 @@ IA_KEY_AGNES = os.getenv("IA_KEY_AGNES")
 TEXT_API_KEY = os.getenv("TEXT_API_KEY")
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 
-LOGO_PATH = "logo.png"  # Asegúrate de que logo.png esté subido a la raíz de tu proyecto en GitHub/Railway
+LOGO_PATH = "logo.png"  # Asegúrate de que logo.png esté subido a la raíz de tu repositorio en GitHub/Railway
 
 if not DISCORD_TOKEN or not IA_KEY_AGNES or not TEXT_API_KEY:
     print("❌ ERROR: Faltan variables de entorno esenciales.")
@@ -35,24 +35,22 @@ bot = commands.Bot(command_prefix=".", intents=intents, help_command=None)
 video_queue = asyncio.Queue()
 XCOINS_FILE = "xcoins.json"
 
-# --- FUNCIÓN PARA AGREGAR MARCA DE AGUA BLANCA (FFMPEG) ---
+# --- FUNCIÓN PARA AGREGAR MARCA DE AGUA BLANCA PURA (FFMPEG) ---
 async def procesar_marca_de_agua(video_bytes: bytes) -> bytes:
-    """Recibe los bytes del video y le pega la marca de agua blanca en la esquina inferior derecha."""
+    """Procesa el video y le pega el logo blanco puro, pequeño (60px) abajo a la derecha."""
     input_temp = "temp_input.mp4"
     output_temp = "temp_output.mp4"
 
+    # Verificar si el archivo de logo existe en la raíz
     if not os.path.exists(LOGO_PATH):
-        print(f"❌ ERROR: No se encontró el logo en {LOGO_PATH}")
-        raise FileNotFoundError(f"Archivo de logo no encontrado en: {LOGO_PATH}")
+        print(f"❌ [ERROR LOGO] No existe el archivo '{LOGO_PATH}' en la raíz del proyecto.")
+        raise FileNotFoundError(f"No se encontró {LOGO_PATH}")
 
     with open(input_temp, "wb") as f:
         f.write(video_bytes)
 
-    # Filtro: Escala el logo blanco a 110px de ancho y le aplica un toque leve de opacidad (0.75)
-    filter_graph = (
-        "[1:v]scale=110:-1,format=rgba,colorchannelmixer=aa=0.75[logo];"
-        "[0:v][logo]overlay=main_w-overlay_w-25:main_h-overlay_h-25"
-    )
+    # Filtro: Escala el logo a 60px de ancho (pequeño) y lo pega abajo a la derecha (15px de margen)
+    filter_graph = "[1:v]scale=60:-1[logo];[0:v][logo]overlay=main_w-overlay_w-15:main_h-overlay_h-15"
 
     cmd = [
         "ffmpeg", "-y",
@@ -71,13 +69,13 @@ async def procesar_marca_de_agua(video_bytes: bytes) -> bytes:
     stdout, stderr = await process.communicate()
 
     if process.returncode != 0:
-        print(f"❌ FFMPEG ERROR LOG:\n{stderr.decode()}")
-        raise RuntimeError("Fallo en la ejecución de FFmpeg")
+        print(f"❌ [ERROR FFMPEG DETALLADO]:\n{stderr.decode('utf-8', errors='ignore')}")
+        raise RuntimeError("FFmpeg falló al procesar el video.")
 
     with open(output_temp, "rb") as f:
         video_procesado = f.read()
 
-    # Limpieza de temporales
+    # Limpieza de archivos temporales
     if os.path.exists(input_temp):
         os.remove(input_temp)
     if os.path.exists(output_temp):
@@ -136,7 +134,6 @@ async def verificar_estado(ctx):
 async def on_ready():
     print(f">> Aqirax System en línea como {bot.user}")
     
-    # Estatus: Transmitiendo / Streaming
     activity = discord.Streaming(
         name="Running Aqirax Models...",
         url="https://www.twitch.tv/aqirax"
@@ -215,7 +212,7 @@ async def video_worker():
                                                     await ctx.send(content=f"**Solicitado por:** {ctx.author.mention}", file=archivo_mp4)
                                                 except Exception as err_wm:
                                                     print(f"⚠️ Error procesando marca de agua: {err_wm}")
-                                                    # Si llega a fallar FFmpeg, envía el video plano como respaldo
+                                                    # Respaldo: envía el video sin procesar si falla FFmpeg
                                                     archivo_mp4 = discord.File(io.BytesIO(video_bytes), filename="video_10s.mp4")
                                                     await ctx.send(content=f"**Solicitado por:** {ctx.author.mention}", file=archivo_mp4)
                                                 
