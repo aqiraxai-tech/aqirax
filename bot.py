@@ -5,6 +5,10 @@ import asyncio
 import io
 import json
 import os
+import static_ffmpeg
+
+# --- INICIALIZAR FFMPEG AUTOMÁTICO ---
+static_ffmpeg.add_paths()
 
 # --- CONFIGURACIÓN CON VARIABLES DE ENTORNO ---
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -12,7 +16,7 @@ IA_KEY_AGNES = os.getenv("IA_KEY_AGNES")
 TEXT_API_KEY = os.getenv("TEXT_API_KEY")
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 
-LOGO_PATH = "logo.png"  # Asegúrate de que logo.png esté subido a la raíz de tu repositorio en GitHub/Railway
+LOGO_PATH = "logo.png"
 
 if not DISCORD_TOKEN or not IA_KEY_AGNES or not TEXT_API_KEY:
     print("❌ ERROR: Faltan variables de entorno esenciales.")
@@ -41,7 +45,6 @@ async def procesar_marca_de_agua(video_bytes: bytes) -> bytes:
     input_temp = "temp_input.mp4"
     output_temp = "temp_output.mp4"
 
-    # Verificar si el archivo de logo existe en la raíz
     if not os.path.exists(LOGO_PATH):
         print(f"❌ [ERROR LOGO] No existe el archivo '{LOGO_PATH}' en la raíz del proyecto.")
         raise FileNotFoundError(f"No se encontró {LOGO_PATH}")
@@ -49,7 +52,7 @@ async def procesar_marca_de_agua(video_bytes: bytes) -> bytes:
     with open(input_temp, "wb") as f:
         f.write(video_bytes)
 
-    # Filtro: Escala el logo a 60px de ancho (pequeño) y lo pega abajo a la derecha (15px de margen)
+    # Logo a 60px de ancho, sin transparencia, abajo a la derecha (15px de margen)
     filter_graph = "[1:v]scale=60:-1[logo];[0:v][logo]overlay=main_w-overlay_w-15:main_h-overlay_h-15"
 
     cmd = [
@@ -75,7 +78,7 @@ async def procesar_marca_de_agua(video_bytes: bytes) -> bytes:
     with open(output_temp, "rb") as f:
         video_procesado = f.read()
 
-    # Limpieza de archivos temporales
+    # Limpieza
     if os.path.exists(input_temp):
         os.remove(input_temp)
     if os.path.exists(output_temp):
@@ -117,7 +120,6 @@ def update_user_xcoins(user_id: str, amount: int):
     save_xcoins(coins_data)
 
 async def verificar_estado(ctx):
-    """Verifica si el bot está activo o en mantenimiento."""
     if not BOT_ACTIVO and ctx.author.id != OWNER_ID:
         embed = discord.Embed(
             title="🚫 Bot En Mantenimiento",
@@ -212,7 +214,6 @@ async def video_worker():
                                                     await ctx.send(content=f"**Solicitado por:** {ctx.author.mention}", file=archivo_mp4)
                                                 except Exception as err_wm:
                                                     print(f"⚠️ Error procesando marca de agua: {err_wm}")
-                                                    # Respaldo: envía el video sin procesar si falla FFmpeg
                                                     archivo_mp4 = discord.File(io.BytesIO(video_bytes), filename="video_10s.mp4")
                                                     await ctx.send(content=f"**Solicitado por:** {ctx.author.mention}", file=archivo_mp4)
                                                 
@@ -359,7 +360,7 @@ async def generar_imagen(ctx, *, prompt: str):
     except Exception as e:
         await mensaje_espera.edit(content=f"`[Error]` {str(e)}")
 
-# 3. VIDEO (.v) - 10 SEGUNDOS CON COLA Y MARCA
+# 3. VIDEO (.v)
 @bot.command(name="v")
 async def generar_video(ctx, *, prompt: str):
     if not await verificar_estado(ctx):
