@@ -5,6 +5,7 @@ import asyncio
 import io
 import json
 import os
+import re
 import static_ffmpeg
 
 # --- INICIALIZAR FFMPEG AUTOMÁTICO ---
@@ -19,7 +20,7 @@ OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 LOGO_PATH = "logo.png"
 
 # Configuración de Emojis y Roles
-EMOJI_LOGO = "<:tuff:1548036405832192201> "
+EMOJI_LOGO = "<:tuff:1548036405832192201>"
 VIP_ROLE_ID = 1548090147952795728  # Rol para quitar marca de agua
 
 if not DISCORD_TOKEN or not IA_KEY_AGNES or not TEXT_API_KEY:
@@ -146,7 +147,7 @@ async def on_ready():
 # --- WORKER DE LA COLA DE VIDEOS ---
 async def video_worker():
     while True:
-        ctx, prompt, image_url, sin_marca, mensaje_espera = await video_queue.get()
+        ctx, prompt, image_urls, sin_marca, mensaje_espera = await video_queue.get()
         try:
             user_id = str(ctx.author.id)
             coins = get_user_xcoins(user_id)
@@ -176,10 +177,10 @@ async def video_worker():
                 "aspect_ratio": "16:9"
             }
 
-            if image_url:
+            # Si hay 1 o más imágenes de referencia (máximo 5)
+            if image_urls:
                 payload["mode"] = "reference"
-                # Pasar la URL directa o validar que sea el parámetro que pide la API Flash
-                payload["images"] = [image_url] # Asegúrate en la docu si 'images' requiere la URL exacta como string o dentro del array
+                payload["images"] = image_urls[:5]
             else:
                 payload["mode"] = "text"
 
@@ -212,7 +213,6 @@ async def video_worker():
                                             if file_res.status == 200:
                                                 video_bytes = await file_res.read()
                                                 
-                                                # SI TIENE ROL Y PIDIÓ SIN MARCA (.un) -> NO PASA POR FFMPEG
                                                 if sin_marca:
                                                     await mensaje_espera.edit(content=f"{EMOJI_LOGO} *Exportando video limpio (Sin marca de agua)...*")
                                                     archivo_mp4 = discord.File(io.BytesIO(video_bytes), filename="video_aqirax_unwatermarked.mp4")
@@ -391,7 +391,6 @@ async def generar_video(ctx, *, prompt: str = ""):
     # REVISAR SI PIDIÓ QUITAR MARCA DE AGUA
     if ".un" in prompt:
         prompt = prompt.replace(".un", "").strip()
-        # Verificar si el usuario tiene el rol permitido en el servidor
         if isinstance(ctx.author, discord.Member):
             has_role = any(role.id == VIP_ROLE_ID for role in ctx.author.roles)
             if has_role or ctx.author.id == OWNER_ID:
@@ -399,15 +398,24 @@ async def generar_video(ctx, *, prompt: str = ""):
             else:
                 await ctx.send(f"{EMOJI_LOGO} ⚠️ **Aviso:** No posees el rol requerido para remover la marca de agua. Tu video se procesará normalmente.", delete_after=10)
 
-    image_url = None
+    image_urls = []
 
+    # 1. Obtener archivos adjuntos en el mensaje
     if ctx.message.attachments:
-        image_url = ctx.message.attachments[0].url
-    elif ".i" in prompt:
+        for att in ctx.message.attachments:
+            if att.content_type and att.content_type.startswith("image/"):
+                image_urls.append(att.url)
+
+    # 2. Extraer URLs escritas en el prompt si usó .i
+    if ".i" in prompt:
         parts = prompt.split(".i")
         prompt = parts[0].strip()
-        if len(parts) > 1 and parts[1].strip().startswith("http"):
-            image_url = parts[1].strip()
+        rest = " ".join(parts[1:])
+        urls_found = re.findall(r'https?://\S+', rest)
+        image_urls.extend(urls_found)
+
+    # Limitar a máximo 5 imágenes
+    image_urls = image_urls[:5]
 
     posicion = video_queue.qsize() + 1
     
@@ -416,7 +424,7 @@ async def generar_video(ctx, *, prompt: str = ""):
     else:
         mensaje_espera = await ctx.send(f"{EMOJI_LOGO} **Encolado.** Eres el primero en la fila, procesando video...")
 
-    await video_queue.put((ctx, prompt, image_url, sin_marca, mensaje_espera))
+    await video_queue.put((ctx, prompt, image_urls, sin_marca, mensaje_espera))
 
 # --- COMANDOS DE MONEDA (XCOINS) ---
 @bot.command(name="bal")
@@ -476,7 +484,7 @@ async def ayuda(ctx):
     )
     embed.add_field(name=".a <prompt>", value="Consulta al modelo Aqirax Flash.", inline=False)
     embed.add_field(name=".i <prompt>", value="Genera imágenes en calidad 4K.", inline=False)
-    embed.add_field(name=".v <prompt> [.i] [.un]", value="Genera videos de 10s (Cuesta 5 XCoins). Usa `.un` para sin marca de agua (Requiere Rol VIP).", inline=False)
+    embed.add_field(name=".v <prompt> [.i] [.un]", value="Genera videos de 10s (Cuesta 5 XCoins). Soporta hasta 5 imágenes. Usa `.un` para sin marca de agua.", inline=False)
     embed.add_field(name=".bal", value="Consulta tu saldo de XCoins.", inline=False)
     
     if ctx.author.id == OWNER_ID:
