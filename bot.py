@@ -178,7 +178,8 @@ async def video_worker():
 
             if image_url:
                 payload["mode"] = "reference"
-                payload["images"] = [image_url]
+                # Pasar la URL directa o validar que sea el parámetro que pide la API Flash
+                payload["images"] = [image_url] # Asegúrate en la docu si 'images' requiere la URL exacta como string o dentro del array
             else:
                 payload["mode"] = "text"
 
